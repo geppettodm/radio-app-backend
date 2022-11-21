@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  mongo:
+    container_name: mongo
+    image: mongo:4.2
+    restart: always
+
+    ports:
+      - 27018:27017
+    volumes:
+      - mongo:/data/db
+
+  node:
+    container_name: node
+    build: .
+    ports:
+      - 3000:3000
+    volumes:
+      - .:/usr/src/app
+    depends_on:
+      - mongo
+
+volumes:
+  mongo: {}
+
+
