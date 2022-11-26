@@ -4,11 +4,12 @@ const express = require('express');
 const router = express.Router();
 
 
-const plcs = ["Italy", "United States", "Brazil", "Argentina", "Cuba", "Mexico", "United Kingdom", "Peru", "Colombia", "Chile",
-    "Spain", "France", "Portugal", "Germany", "Poland", "Austria", "Switzerland", "Netherlands", "Belgium", "Greece"];
+const plcs = ["Italy", "United States", "Brazil", "Argentina", "Cuba", "Mexico", "United Kingdom", "Colombia", "Chile",
+    "Spain", "France", "Germany", "Greece"];
 let locations = [];
 let db;
 connectDB();
+//await initdb();
 
 async function connectDB() {
     const uri = process.env.MONGOURI;
@@ -37,16 +38,13 @@ async function initdb(req, res) {
         }
     });
     locations = places;
-    let nr;
     try {
-        nr = await addRadiosToDb();
-        return nr;
+        return await addRadiosToDb();
     } catch (err) { return err };
 }
 
 async function addRadiosToDb() {
     let query;
-    let nr = 0;
     try {
         locations.forEach(async item => {
             query = { city: item.title };
@@ -57,19 +55,52 @@ async function addRadiosToDb() {
                 radios.data.content[0].items.forEach(async radio => {
                     let conn = radio.href.split("/")[3];
                     let doc = {
-                        name: radio.title,
+                        name: radio.title.toLowerCase(),
                         city: item.title,
                         geo: item.geo,
                         country: item.country,
                         conn: conn,
                     }
                     await db.collection('radios').insertOne(doc);
-                    nr++;
                 })
             }
         })
-        return { radioAdded: nr };
+        return { radioAdded: ok };
     } catch (err) { return err }
+}
+
+async function randomRadios(req){
+    let number = Number(req.query.number);
+    let rand = []; 
+
+    if(!number || number < 1) number=10;
+    
+    const agg = db.collection('radios').aggregate([{$sample: {size: number}}]);
+    for await (const doc of agg){
+        rand.push(doc);
+    }
+    return rand;
+}
+
+async function queryRadios(req){
+    let skip = Number(req.query.skip);
+    let limit = Number(req.query.limit);
+    let string = String(req.query.string);
+    
+    if (string.length<3) return null;
+
+    let page = [];
+    if(!skip || skip < 0) skip=0;
+    if(!limit || limit < 1) limit=10;
+
+    string = string.toLowerCase();
+    let query = {"name":{$regex: string}};
+    const cursor = db.collection('radios').find(query).sort({"name": 1}).limit(limit).skip(skip);
+    for await(const doc of cursor){
+        page.push(doc);
+    }
+    return page;
+
 }
 
 
@@ -80,5 +111,8 @@ router.get('/initdb', async (req, res) => {
 router.get('/testdb', async (req, res) => {
     res.json(await testdb());
 })
+
+router.get('/random', async function (req, res) {res.json(await randomRadios(req))});
+router.get('/query', async function (req, res) {res.json(await queryRadios(req))})
 
 module.exports = router
