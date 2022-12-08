@@ -2,18 +2,13 @@ const { MongoClient } = require("mongodb");
 const ObjectID = require("mongodb").ObjectId;
 const gis = require('async-g-i-s');
 
-async function importGoogleImage() {
-    const { googleImage } = await import("free-google-image-search");
-    return googleImage;
-}
-
 
 const express = require('express');
 const router = express.Router();
 
 
-const plcs = ["Italy", "United States", "Brazil", "Argentina", "Cuba", "Mexico", "United Kingdom", "Colombia", "Chile",
-    "Spain", "France", "Germany", "Greece"];
+const plcs = ["Italy", "Brazil", "Cuba", "United Kingdom", "Spain", "France",
+    "Germany", "Greece"];
 let locations = [];
 let db;
 connectDB();
@@ -85,6 +80,9 @@ async function randomRadios(req) {
 
     const agg = db.collection('radios').aggregate([{ $sample: { size: number } }]);
     for await (const doc of agg) {
+        if (!doc.image){
+            doc.image = await getRadioImage(doc._id);
+        }
         rand.push(doc);
     }
     return rand;
@@ -105,6 +103,10 @@ async function queryRadios(req) {
     let query = { "name": { $regex: string } };
     const cursor = db.collection('radios').find(query).sort({ "name": 1 }).limit(limit).skip(skip);
     for await (const doc of cursor) {
+        if(!doc.image)
+            {
+                doc.image = await getRadioImage(doc._id);
+            }
         page.push(doc);
     }
     return page;
@@ -128,20 +130,20 @@ async function returnRadio(req) {
 
 async function returnImageURL(string) {
     let url;
-    try{
+    try {
         url = await gis(string);
-    } catch (err){console.log(err)}
+    } catch (err) { console.log(err) }
     return url[0].url;
 }
 
-async function getRadioImage(id){
+async function getRadioImage(id) {
     let query = { "_id": new ObjectID(id) };
     let radio = await db.collection('radios').findOne(query);
-    if(!radio.image){
+    if (!radio.image) {
         const url = await returnImageURL(radio.name);
-        const updateDoc = {$set: {image: url}};
+        const updateDoc = { $set: { image: url } };
         //to not create a document if no documents match the filter
-        const option = {upsert:false};
+        const option = { upsert: false };
         await db.collection('radios').updateOne(query, updateDoc, option);
     }
     radio = await db.collection('radios').findOne(query);
@@ -161,7 +163,7 @@ router.get('/query', async function (req, res) { res.json(await queryRadios(req)
 router.get('/radio/url', async function (req, res) { res.json(await returnRadioConn(req)) });
 router.get('/radio', async function (req, res) { res.json(await returnRadio(req)) })
 
-router.get('/img', async function (req, res) {res.json(await returnImageURL(req.query.string))});
-router.get('/get-img', async function (req, res) {res.json(await getRadioImage(req.query.id))});
+router.get('/img', async function (req, res) { res.json(await returnImageURL(req.query.string)) });
+router.get('/get-img', async function (req, res) { res.json(await getRadioImage(req.query.id)) });
 
 module.exports = router
