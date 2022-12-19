@@ -98,6 +98,7 @@ async function queryRadios(req) {
     let page = [];
     if (!skip || skip < 0) skip = 0;
     if (!limit || limit < 1) limit = 10;
+    skip= skip*limit
 
     string = string.toLowerCase();
     let query = { "name": { $regex: string } };
@@ -128,12 +129,14 @@ async function returnRadio(req) {
     } else return null;
 }
 
+
 async function returnImageURL(string) {
-    let url;
-    try {
-        url = await gis(string);
-    } catch (err) { console.log(err) }
-    return url[0].url;
+    let url = null;
+    // try {
+    //     url = await gis(string);
+    //     return url[0].url;
+    // } catch (err) { console.log(url) }
+    return url
 }
 
 async function getRadioImage(id) {
@@ -150,6 +153,49 @@ async function getRadioImage(id) {
     return radio.image;
 }
 
+async function getRadioNear(req){
+    let skip = Number(req.query.skip);
+    let limit = Number(req.query.limit);
+    let x = Number(req.query.x);
+    let y = Number(req.query.y);
+    let ext = Number(req.query.ext);
+
+
+    let page = [];
+    if (!skip || skip < 0) skip = 0;
+    if (!limit || limit < 1) limit = 3;
+    skip= skip*limit
+
+
+    let query = {$and: [{'geo.1':{ $lt: (x + ext) }}, {'geo.1':{ $gt: (x - ext)}}, 
+        {'geo.0':{ $lt: (y+ext) }}, {'geo.0':{ $gt: (y-ext) }}]};
+    let cursor = await db.collection("radios").find(query).sort({"city":1}).limit(limit).skip(skip)
+
+    for await (const doc of cursor) {
+        if (!doc.image){
+            doc.image = await getRadioImage(doc._id);
+        }
+        page.push(doc);
+    }
+    if (page.length>0) return page
+    return
+}
+
+async function getRadioArea(req){
+    let area = req.query.country;
+    let page = []
+
+    const agg = db.collection('radios').aggregate([{$match: {country: area}}, {$sample: { size: 10 }} ]);
+    for await (const doc of agg) {
+        if (!doc.image){
+            doc.image = await getRadioImage(doc._id);
+        }
+        page.push(doc);
+    }
+    return page
+}
+
+
 router.get('/initdb', async (req, res) => {
     res.json(await initdb(req, res))
 })
@@ -165,5 +211,8 @@ router.get('/radio', async function (req, res) { res.json(await returnRadio(req)
 
 router.get('/img', async function (req, res) { res.json(await returnImageURL(req.query.string)) });
 router.get('/get-img', async function (req, res) { res.json(await getRadioImage(req.query.id)) });
+
+router.get('/near', async function (req, res) { res.json(await getRadioNear(req)) });
+router.get('/radios', async function (req, res) { res.json(await getRadioArea(req)) });
 
 module.exports = router
