@@ -195,6 +195,17 @@ async function getRadioArea(req){
     return page
 }
 
+async function getUrl(req){
+    let fgd;
+    try{
+    fgd = await fetch(req.query.string);  
+    return fgd.url;
+    } catch (err) {
+        console.log(err);
+        return null
+    };
+}
+
 
 router.get('/initdb', async (req, res) => {
     res.json(await initdb(req, res))
@@ -203,6 +214,7 @@ router.get('/initdb', async (req, res) => {
 router.get('/testdb', async (req, res) => {
     res.json(await testdb());
 })
+
 
 router.get('/random', async function (req, res) { res.json(await randomRadios(req)) });
 router.get('/query', async function (req, res) { res.json(await queryRadios(req)) });
@@ -214,5 +226,7 @@ router.get('/get-img', async function (req, res) { res.json(await getRadioImage(
 
 router.get('/near', async function (req, res) { res.json(await getRadioNear(req)) });
 router.get('/radios', async function (req, res) { res.json(await getRadioArea(req)) });
+
+router.get('/url', async function (req,res) {res.json(await getUrl(req))})
 
 module.exports = router
