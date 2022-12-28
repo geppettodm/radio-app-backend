@@ -16,6 +16,7 @@ services:
     build: .
     environment:
       - MONGOURI=mongodb://app:password@mongo:27017
+      - TOKEN_GEN=1234
     ports:
       - 3000:3000
     volumes:
