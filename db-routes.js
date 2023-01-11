@@ -2,7 +2,7 @@ const { MongoClient } = require("mongodb");
 const ObjectID = require("mongodb").ObjectId;
 const gis = require('async-g-i-s');
 const jwt = require('jsonwebtoken');
-const crypto = require ('crypto');
+const crypto = require('crypto');
 
 
 const express = require('express');
@@ -212,59 +212,73 @@ async function getUrl(req) {
     };
 }
 
-async function getFavourites(req){
+async function getFavourites(req) {
     const user = JSON.parse(Buffer.from(req.headers.accesstoken.split('.')[1], 'base64')).username
-    const query = {username:user}
+    const query = { username: user }
     const userDoc = await db.collection('users').findOne(query)
-    if(!userDoc || !userDoc.favourites) return null
+    if (!userDoc || !userDoc.favourites) return null
     let favs = [];
-    userDoc.favourites.forEach(async (id)=>{
-        id = new ObjectID(id)
-        favs.push(await db.collection('radios').findOne({_id:id}))
-    })
+    for(let id in userDoc.favourites){
+        favs.push(await db.collection('radios').findOne({ "_id": new ObjectID(userDoc.favourites[id]) }))
+    }
     return favs;
 }
 
-async function addFavourite(req){
+async function addFavourite(req) {
     const id = req.body.id
-    const user = JSON.parse(Buffer.from(req.headers.accesstoken.split('.')[1], 'base64')).username
-    const query = {username:user}
-    //TODO: insert in db
-    
+    const username = JSON.parse(Buffer.from(req.headers.accesstoken.split('.')[1], 'base64')).username
+    const user = db.collection('users').findOne({ username: username })
+
+    db.collection('users').updateOne(
+        { username: username },
+        { $push: { favourites: id } }
+    )
+
 }
+
+async function removeFavourite(req) {
+    const id = req.body.id
+    const username = JSON.parse(Buffer.from(req.headers.accesstoken.split('.')[1], 'base64')).username
+    const user = db.collection('users').updateOne(
+        { username: username },
+        { $pull: { favourites: id } }
+    )
+}
+
+
 
 // AUTENTICAZIONE E LOGIN
 
-function authToken(req,res, next){
+function authToken(req, res, next) {
     const token = req.headers.accesstoken
-    if(token == null) return res.sendStatus(401)
-  
+    if (token == null) return res.sendStatus(401)
+
     jwt.verify(token, process.env.TOKEN_GEN, (err, data) => {
-      if(err!==null) return res.sendStatus(401)
-      next();
+        if (err !== null) return res.sendStatus(401)
+        next();
     })
-  }
+}
 
 router.post('/newuser', async (req, res) => {
     const username = req.body.username;
-    const y = await db.collection('users').findOne({username:username})
-    if(y) return res.status(400).send('Username already exists');
+    const y = await db.collection('users').findOne({ username: username })
+    if (y) return res.status(400).send('Username already exists');
     const password = crypto.createHash('sha256').update(req.body.password).digest('base64');
-    db.collection('users').insertOne({username:username, password:password});
+    db.collection('users').insertOne({ username: username, password: password, favourites: [] });
     const accessToken = generateAccessToken(username);
     res.json({ accessToken: accessToken });
 })
 
 router.post('/login', async (req, res) => {
     const username = req.body.username;
-    await db.collection('users').findOne({username:username}).then((user) => {
-        if(!user) return res.status(400).send('Username not found');
+    await db.collection('users').findOne({ username: username }).then((user) => {
+        if (!user) return res.status(400).send('Username not found');
         const password = crypto.createHash('sha256').update(req.body.password).digest('base64');
-        if(user.password !== password) return res.status(400).send('Wrong password');
+        if (user.password !== password) return res.status(400).send('Wrong password');
         const accessToken = generateAccessToken(username);
         res.json({ accessToken: accessToken });
     });
-    
+
 })
 
 function generateAccessToken(username) {
@@ -297,7 +311,8 @@ router.get('/radios', async function (req, res) { res.json(await getRadioArea(re
 router.get('/url', async function (req, res) { res.json(await getUrl(req)) })
 
 router.get('/favourites', async function (req, res) { res.json(await getFavourites(req)) });
-router.post('/favourite', async function (req, res) { res.json(await addFavourite(req)) });
+router.post('/add-favourite', async function (req, res) { res.json(await addFavourite(req)) });
+router.post('/remove-favourite', async function (req, res) { res.json(await removeFavourite(req)) });
 
 
 
