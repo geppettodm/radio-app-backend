@@ -1,11 +1,14 @@
 const { MongoClient } = require("mongodb");
 const ObjectID = require("mongodb").ObjectId;
 const gis = require('async-g-i-s');
+const jwt = require('jsonwebtoken');
+const crypto = require ('crypto');
 
 
 const express = require('express');
 const router = express.Router();
 
+// INIZIALIZZAZIONE DB E TEST
 
 const plcs = ["Italy", "Brazil", "Cuba", "United Kingdom", "Spain", "France",
     "Germany", "Greece"];
@@ -46,6 +49,8 @@ async function initdb(req, res) {
     } catch (err) { return err };
 }
 
+// FUNZIONI DB
+
 async function addRadiosToDb() {
     let query;
     try {
@@ -80,7 +85,7 @@ async function randomRadios(req) {
 
     const agg = db.collection('radios').aggregate([{ $sample: { size: number } }]);
     for await (const doc of agg) {
-        if (!doc.image){
+        if (!doc.image) {
             doc.image = await getRadioImage(doc._id);
         }
         rand.push(doc);
@@ -98,16 +103,15 @@ async function queryRadios(req) {
     let page = [];
     if (!skip || skip < 0) skip = 0;
     if (!limit || limit < 1) limit = 10;
-    skip= skip*limit
+    skip = skip * limit
 
     string = string.toLowerCase();
     let query = { "name": { $regex: string } };
     const cursor = db.collection('radios').find(query).sort({ "name": 1 }).limit(limit).skip(skip);
     for await (const doc of cursor) {
-        if(!doc.image)
-            {
-                doc.image = await getRadioImage(doc._id);
-            }
+        if (!doc.image) {
+            doc.image = await getRadioImage(doc._id);
+        }
         page.push(doc);
     }
     return page;
@@ -153,7 +157,7 @@ async function getRadioImage(id) {
     return radio.image;
 }
 
-async function getRadioNear(req){
+async function getRadioNear(req) {
     let skip = Number(req.query.skip);
     let limit = Number(req.query.limit);
     let x = Number(req.query.x);
@@ -164,30 +168,32 @@ async function getRadioNear(req){
     let page = [];
     if (!skip || skip < 0) skip = 0;
     if (!limit || limit < 1) limit = 3;
-    skip= skip*limit
+    skip = skip * limit
 
 
-    let query = {$and: [{'geo.1':{ $lt: (x + ext) }}, {'geo.1':{ $gt: (x - ext)}}, 
-        {'geo.0':{ $lt: (y+ext) }}, {'geo.0':{ $gt: (y-ext) }}]};
-    let cursor = await db.collection("radios").find(query).sort({"city":1}).limit(limit).skip(skip)
+    let query = {
+        $and: [{ 'geo.1': { $lt: (x + ext) } }, { 'geo.1': { $gt: (x - ext) } },
+        { 'geo.0': { $lt: (y + ext) } }, { 'geo.0': { $gt: (y - ext) } }]
+    };
+    let cursor = await db.collection("radios").find(query).sort({ "city": 1 }).limit(limit).skip(skip)
 
     for await (const doc of cursor) {
-        if (!doc.image){
+        if (!doc.image) {
             doc.image = await getRadioImage(doc._id);
         }
         page.push(doc);
     }
-    if (page.length>0) return page
+    if (page.length > 0) return page
     return
 }
 
-async function getRadioArea(req){
+async function getRadioArea(req) {
     let area = req.query.country;
     let page = []
 
-    const agg = db.collection('radios').aggregate([{$match: {country: area}}, {$sample: { size: 10 }} ]);
+    const agg = db.collection('radios').aggregate([{ $match: { country: area } }, { $sample: { size: 10 } }]);
     for await (const doc of agg) {
-        if (!doc.image){
+        if (!doc.image) {
             doc.image = await getRadioImage(doc._id);
         }
         page.push(doc);
@@ -195,18 +201,79 @@ async function getRadioArea(req){
     return page
 }
 
-async function getUrl(req){
+async function getUrl(req) {
     let fgd;
-    try{
-    fgd = await fetch(req.query.string);  
-    return fgd.url;
+    try {
+        fgd = await fetch(req.query.string);
+        return fgd.url;
     } catch (err) {
         console.log(err);
         return null
     };
 }
 
+async function getFavourites(req){
+    const user = JSON.parse(Buffer.from(req.headers.accesstoken.split('.')[1], 'base64')).username
+    const query = {username:user}
+    const userDoc = await db.collection('users').findOne(query)
+    if(!userDoc || !userDoc.favourites) return null
+    let favs = [];
+    userDoc.favourites.forEach(async (id)=>{
+        id = new ObjectID(id)
+        favs.push(await db.collection('radios').findOne({_id:id}))
+    })
+    return favs;
+}
 
+async function addFavourite(req){
+    const id = req.body.id
+    const user = JSON.parse(Buffer.from(req.headers.accesstoken.split('.')[1], 'base64')).username
+    const query = {username:user}
+    //TODO: insert in db
+    
+}
+
+// AUTENTICAZIONE E LOGIN
+
+function authToken(req,res, next){
+    const token = req.headers.accesstoken
+    if(token == null) return res.sendStatus(401)
+  
+    jwt.verify(token, process.env.TOKEN_GEN, (err, data) => {
+      if(err!==null) return res.sendStatus(401)
+      next();
+    })
+  }
+
+router.post('/newuser', async (req, res) => {
+    const username = req.body.username;
+    const y = await db.collection('users').findOne({username:username})
+    if(y) return res.status(400).send('Username already exists');
+    const password = crypto.createHash('sha256').update(req.body.password).digest('base64');
+    db.collection('users').insertOne({username:username, password:password});
+    const accessToken = generateAccessToken(username);
+    res.json({ accessToken: accessToken });
+})
+
+router.post('/login', async (req, res) => {
+    const username = req.body.username;
+    await db.collection('users').findOne({username:username}).then((user) => {
+        if(!user) return res.status(400).send('Username not found');
+        const password = crypto.createHash('sha256').update(req.body.password).digest('base64');
+        if(user.password !== password) return res.status(400).send('Wrong password');
+        const accessToken = generateAccessToken(username);
+        res.json({ accessToken: accessToken });
+    });
+    
+})
+
+function generateAccessToken(username) {
+    return jwt.sign({ username: username }, process.env.TOKEN_GEN, { expiresIn: '1800s' })
+}
+
+
+
+router.use(authToken)
 router.get('/initdb', async (req, res) => {
     res.json(await initdb(req, res))
 })
@@ -227,6 +294,11 @@ router.get('/get-img', async function (req, res) { res.json(await getRadioImage(
 router.get('/near', async function (req, res) { res.json(await getRadioNear(req)) });
 router.get('/radios', async function (req, res) { res.json(await getRadioArea(req)) });
 
-router.get('/url', async function (req,res) {res.json(await getUrl(req))})
+router.get('/url', async function (req, res) { res.json(await getUrl(req)) })
+
+router.get('/favourites', async function (req, res) { res.json(await getFavourites(req)) });
+router.post('/favourite', async function (req, res) { res.json(await addFavourite(req)) });
+
+
 
 module.exports = router
