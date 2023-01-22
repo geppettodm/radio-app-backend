@@ -19,7 +19,7 @@ app.use('/db', dbRouter);
 
 
 app.all('*', (req, res) => {
-  res.json({ ti_saluta: "stocazzo" });
+  res.json({ api_funzionante: "nessuna risposta disponibile" });
 })
 
 app.listen(3000);

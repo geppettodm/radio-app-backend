@@ -26,7 +26,7 @@ async function connectDB() {
 
 async function testdb() {
     try {
-        const query = { nome: 'stocazzo' };
+        const query = { username: 'mario' };
         return db.collection('users').findOne(query);
 
     } catch (error) {
@@ -136,10 +136,12 @@ async function returnRadio(req) {
 
 async function returnImageURL(string) {
     let url = null;
+    // //commentare che google s'incazza
     // try {
-    //     url = await gis(string);
-    //     return url[0].url;
+    //      url = await gis(string);
+    //      return url[0].url;
     // } catch (err) { console.log(url) }
+
     return url
 }
 
